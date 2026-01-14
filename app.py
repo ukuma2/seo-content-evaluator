@@ -313,6 +313,7 @@ def create_seo_analysis_chain(llm: ChatGoogleGenerativeAI) -> Any:
     output_parser = JsonOutputParser()
     
     # System prompt for Gemini
+    # Note: Escaped curly braces {{}} to prevent LangChain from interpreting them as template variables
     system_prompt = """You are an elite SEO specialist using modern ranking factors. 
 You will receive page content and live keyword ideas from search results. 
 
@@ -325,7 +326,7 @@ Your task:
 6. Remind the user to check mobile speed via PageSpeed Insights
 
 Output valid JSON matching this exact schema:
-{
+{{
     "seo_score": <0-100 integer>,
     "critical_issues": [<3 strings describing issues>],
     "primary_keyword": "<string>",
@@ -335,7 +336,7 @@ Output valid JSON matching this exact schema:
     "rewritten_intro": "<string, natural paragraph with keyword inclusion>",
     "suggested_h1": "<string, optional if H1 is missing/weak>",
     "mobile_speed_reminder": "<string reminder>"
-}"""
+}}"""
     
     # User prompt template
     prompt_template = ChatPromptTemplate.from_messages([
