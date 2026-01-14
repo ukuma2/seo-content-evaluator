@@ -314,48 +314,123 @@ def create_seo_analysis_chain(llm: ChatGoogleGenerativeAI) -> Any:
     
     # System prompt for Gemini
     # Note: Escaped curly braces {{}} to prevent LangChain from interpreting them as template variables
-    system_prompt = """You are an elite SEO specialist using modern ranking factors. 
-You will receive page content and live keyword ideas from search results. 
+    system_prompt = """You are an elite SEO specialist conducting comprehensive website audits. 
+You will receive page content, metadata, and live keyword ideas from search results.
 
-Your task:
-1. Pick the best primary keyword from the provided keyword ideas
-2. Verify keyword placement in Title/H1/first 100 words
-3. Target 1-2% keyword density (natural, not stuffed)
-4. Improve readability and user experience
-5. Output exact replacements for Title, Meta Description, and intro paragraph
-6. Remind the user to check mobile speed via PageSpeed Insights
+Your task is to provide a DETAILED, PROFESSIONAL SEO ANALYSIS similar to enterprise-level SEO audit reports.
 
-Output valid JSON matching this exact schema:
+CRITICAL REQUIREMENTS:
+1. Analyze the page across 10+ SEO categories (Keyword Research, Content, Title Tag, Meta Description, Headers, Content Quality, Images, URLs, Mobile, User Engagement, etc.)
+2. Provide specific scores (0-10) for each category with detailed strengths and weaknesses
+3. Give copy-paste ready improvements for ALL elements
+4. Include priority implementation order
+5. Be specific, actionable, and professional
+
+Output valid JSON matching this EXACT schema (all fields required):
 {{
-    "seo_score": <0-100 integer>,
-    "critical_issues": [<3 strings describing issues>],
-    "primary_keyword": "<string>",
-    "secondary_keywords": [<5 strings>],
-    "new_title": "<string, max 60 chars>",
-    "new_meta_description": "<string, max 160 chars>",
-    "rewritten_intro": "<string, natural paragraph with keyword inclusion>",
-    "suggested_h1": "<string, optional if H1 is missing/weak>",
-    "mobile_speed_reminder": "<string reminder>"
+    "seo_score": <0-100 integer, overall score>,
+    "detailed_analysis": {{
+        "keyword_research": {{
+            "score": <0-10>,
+            "strengths": [<array of strings>],
+            "weaknesses": [<array of strings>]
+        }},
+        "content_analysis": {{
+            "score": <0-10>,
+            "strengths": [<array of strings>],
+            "weaknesses": [<array of strings>]
+        }},
+        "title_tag": {{
+            "score": <0-10>,
+            "current": "<current title if found>",
+            "issues": [<array of specific issues>],
+            "improved": "<optimized title, max 60 chars>"
+        }},
+        "meta_description": {{
+            "score": <0-10>,
+            "current": "<current meta if found>",
+            "issues": [<array of specific issues>],
+            "improved": "<optimized meta, max 160 chars>"
+        }},
+        "header_structure": {{
+            "score": <0-10>,
+            "strengths": [<array of strings>],
+            "weaknesses": [<array of strings>]
+        }},
+        "content_quality": {{
+            "score": <0-10>,
+            "strengths": [<array of strings>],
+            "weaknesses": [<array of strings>]
+        }},
+        "image_optimization": {{
+            "score": <0-10>,
+            "issues": [<array of specific issues>]
+        }},
+        "url_structure": {{
+            "score": <0-10>,
+            "strengths": [<array of strings>],
+            "weaknesses": [<array of strings>]
+        }},
+        "mobile_friendliness": {{
+            "score": <0-10>,
+            "strengths": [<array of strings>],
+            "weaknesses": [<array of strings>]
+        }},
+        "user_engagement": {{
+            "score": <0-10>,
+            "strengths": [<array of strings>],
+            "weaknesses": [<array of strings>]
+        }}
+    }},
+    "keywords": {{
+        "primary": "<best primary keyword>",
+        "secondary": [<5-10 secondary keywords>]
+    }},
+    "improvements": {{
+        "title_tag": "<optimized title tag>",
+        "meta_description": "<optimized meta description>",
+        "h1_tag": "<optimized H1 tag>",
+        "intro_paragraph": "<rewritten intro with natural keyword inclusion>",
+        "header_suggestions": [<array of optimized H2/H3 headers>],
+        "content_additions": [<array of suggested content blocks>],
+        "image_alt_text": [<array of optimized alt text examples>],
+        "schema_markup": "<JSON-LD schema markup if applicable>",
+        "internal_linking": "<suggested internal linking improvements>",
+        "faq_section": [<array of FAQ items if applicable>]
+    }},
+    "priority_order": [<array of strings in order of implementation priority>],
+    "critical_issues": [<3-5 most critical issues>],
+    "estimated_new_score": "<predicted score after improvements, e.g., 8.0-8.5/10>"
 }}"""
     
     # User prompt template
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
-        ("human", """Analyze this webpage for SEO:
+        ("human", """Conduct a comprehensive SEO audit of this webpage:
 
+URL Being Analyzed: {url}
 Page Title: {title}
 Meta Description: {meta_description}
-H1: {h1}
+H1 Tag: {h1}
 Main Content (first portion):
 {content}
 
 Keyword Ideas from Live Search:
 {keywords}
 
-Source Links:
+Source Links from Research:
 {source_links}
 
-Provide SEO analysis and improvements in the required JSON format.""")
+Provide a DETAILED, PROFESSIONAL SEO ANALYSIS with:
+1. Overall SEO score (0-100)
+2. Category-by-category breakdown (10 categories, each scored 0-10)
+3. Strengths and weaknesses for each category
+4. Specific, actionable improvements
+5. Copy-paste ready code for all improvements
+6. Priority implementation order
+7. Estimated score after improvements
+
+Output MUST be valid JSON matching the exact schema provided. Be thorough, specific, and professional.""")
     ])
     
     # Create chain with LCEL
@@ -390,39 +465,41 @@ def analyze_seo(
         Dictionary with SEO analysis results
     """
     try:
-        # Chunk content to avoid token limits
-        content_chunk = chunk_text(content, max_chars=8000)
+        # Chunk content to avoid token limits (increased for better analysis)
+        content_chunk = chunk_text(content, max_chars=10000)
         
         # Create analysis chain
         chain = create_seo_analysis_chain(llm)
         
         # Prepare inputs
         inputs = {
+            "url": url or "URL not provided",
             "title": title or "Not found",
             "meta_description": meta_description or "Not found",
             "h1": h1 or "Not found",
             "content": content_chunk,
-            "keywords": ", ".join(keywords[:10]),  # Limit keywords in prompt
-            "source_links": "\n".join(source_links[:5])  # Limit links in prompt
+            "keywords": ", ".join(keywords[:15]),  # Increased keyword limit
+            "source_links": "\n".join(source_links[:8])  # Increased link limit
         }
         
         # Run analysis - invoke chain with prepared inputs
         result = chain.invoke(inputs)
         
-        # Validate and ensure all required fields exist
-        required_fields = [
-            "seo_score", "critical_issues", "primary_keyword",
-            "secondary_keywords", "new_title", "new_meta_description",
-            "rewritten_intro"
-        ]
-        
-        for field in required_fields:
-            if field not in result:
-                result[field] = "Not provided" if field != "seo_score" else 0
-                if field == "critical_issues":
-                    result[field] = ["Analysis incomplete"]
-                elif field == "secondary_keywords":
-                    result[field] = []
+        # Validate and ensure all required fields exist (new detailed schema)
+        if "seo_score" not in result:
+            result["seo_score"] = 0
+        if "detailed_analysis" not in result:
+            result["detailed_analysis"] = {}
+        if "keywords" not in result:
+            result["keywords"] = {"primary": "unknown", "secondary": []}
+        if "improvements" not in result:
+            result["improvements"] = {}
+        if "critical_issues" not in result:
+            result["critical_issues"] = ["Analysis incomplete"]
+        if "priority_order" not in result:
+            result["priority_order"] = []
+        if "estimated_new_score" not in result:
+            result["estimated_new_score"] = "N/A"
         
         return result
         
@@ -446,9 +523,10 @@ def analyze_seo(
             "critical_issues": [f"Analysis error: {error_msg}"],
             "primary_keyword": "unknown",
             "secondary_keywords": [],
-            "new_title": "Error during analysis",
-            "new_meta_description": "Error during analysis",
-            "rewritten_intro": "Error during analysis",
+            "detailed_analysis": {},
+            "keywords": {"primary": "unknown", "secondary": []},
+            "improvements": {},
+            "priority_order": [],
             "error": error_msg
         }
 
@@ -520,7 +598,7 @@ def main():
             model=model_name,
             google_api_key=api_key,
             temperature=0.3,  # Lower temperature for more consistent analysis
-            max_tokens=2000
+            max_tokens=4000  # Increased for detailed analysis
         )
     except Exception as e:
         st.error(f"Failed to initialize Gemini: {str(e)}")
@@ -592,7 +670,7 @@ def main():
                     st.write(f"- {link}")
         
         # Phase 3: Gemini analysis
-        with st.spinner("🤖 Consulting Gemini for SEO analysis..."):
+        with st.spinner("🤖 Consulting Gemini for comprehensive SEO analysis..."):
             analysis = analyze_seo(
                 content=crawl_result["text"],
                 title=crawl_result.get("title"),
@@ -600,68 +678,151 @@ def main():
                 h1=crawl_result.get("h1"),
                 keywords=keyword_result["keywords"],
                 source_links=keyword_result.get("source_links", []),
-                llm=llm
+                llm=llm,
+                url=url
             )
         
         if analysis.get("error"):
             st.error(f"**Analysis Error:** {analysis['error']}")
             st.stop()
         
-        # Phase 4: Display results
+        # Phase 4: Display results - Comprehensive Detailed Format
         st.divider()
-        st.header("📊 SEO Analysis Results")
+        st.header("📊 Comprehensive SEO Analysis Results")
         
-        # SEO Score
+        # Overall SEO Score
         score = analysis.get("seo_score", 0)
-        st.subheader(f"SEO Score: {score}/100")
+        st.subheader(f"Overall SEO Score: {score}/100")
         st.progress(score / 100)
+        
+        # Estimated new score
+        if analysis.get("estimated_new_score"):
+            st.info(f"📈 **Estimated Score After Improvements:** {analysis.get('estimated_new_score')}")
         
         # Critical Issues
         st.subheader("🚨 Critical Issues")
         issues = analysis.get("critical_issues", [])
-        for i, issue in enumerate(issues, 1):
-            st.markdown(f"{i}. {issue}")
+        if issues:
+            for i, issue in enumerate(issues, 1):
+                st.markdown(f"{i}. {issue}")
+        else:
+            st.write("No critical issues identified.")
         
-        # Keywords
+        # Detailed Analysis by Category
+        st.subheader("📋 Detailed Analysis by Category")
+        detailed = analysis.get("detailed_analysis", {})
+        
+        categories = [
+            ("keyword_research", "Keyword Research & Strategy"),
+            ("content_analysis", "Content Analysis"),
+            ("title_tag", "Title Tag"),
+            ("meta_description", "Meta Description"),
+            ("header_structure", "Header Structure"),
+            ("content_quality", "Content Quality"),
+            ("image_optimization", "Image Optimization"),
+            ("url_structure", "URL Structure"),
+            ("mobile_friendliness", "Mobile-Friendliness"),
+            ("user_engagement", "User Engagement")
+        ]
+        
+        for cat_key, cat_name in categories:
+            if cat_key in detailed:
+                cat_data = detailed[cat_key]
+                with st.expander(f"{cat_name} - Score: {cat_data.get('score', 'N/A')}/10", expanded=False):
+                    if "strengths" in cat_data and cat_data["strengths"]:
+                        st.write("**Strengths:**")
+                        for strength in cat_data["strengths"]:
+                            st.markdown(f"✅ {strength}")
+                    
+                    if "weaknesses" in cat_data and cat_data["weaknesses"]:
+                        st.write("**Weaknesses:**")
+                        for weakness in cat_data["weaknesses"]:
+                            st.markdown(f"❌ {weakness}")
+                    
+                    if "issues" in cat_data and cat_data["issues"]:
+                        st.write("**Issues:**")
+                        for issue in cat_data["issues"]:
+                            st.markdown(f"⚠️ {issue}")
+                    
+                    if "current" in cat_data:
+                        st.write(f"**Current:** `{cat_data['current']}`")
+                    
+                    if "improved" in cat_data:
+                        st.write(f"**Improved:** `{cat_data['improved']}`")
+        
+        # Keywords Section
         st.subheader("🔑 Recommended Keywords")
+        keywords = analysis.get("keywords", {})
         col1, col2 = st.columns([1, 2])
         with col1:
             st.write("**Primary Keyword:**")
-            st.code(analysis.get("primary_keyword", "N/A"), language=None)
+            st.code(keywords.get("primary", "N/A"), language=None)
         with col2:
             st.write("**Secondary Keywords:**")
-            secondary = analysis.get("secondary_keywords", [])
+            secondary = keywords.get("secondary", [])
             if secondary:
                 st.write(", ".join(secondary))
             else:
                 st.write("None provided")
         
-        # Copy-paste improvements
-        st.subheader("✨ Copy-Paste Improvements")
+        # Copy-Paste Improvements Section
+        st.subheader("✨ Copy-Paste Ready Improvements")
+        improvements = analysis.get("improvements", {})
         
-        st.write("**New Title Tag** (≤60 chars):")
-        new_title = analysis.get("new_title", "Not provided")
-        st.code(new_title, language=None)
-        st.caption(f"Length: {len(new_title)} characters")
+        if improvements.get("title_tag"):
+            st.write("**1. Optimized Title Tag:**")
+            st.code(improvements["title_tag"], language="html")
+            st.caption(f"Length: {len(improvements['title_tag'])} characters")
         
-        st.write("**New Meta Description** (≤160 chars):")
-        new_meta = analysis.get("new_meta_description", "Not provided")
-        st.code(new_meta, language=None)
-        st.caption(f"Length: {len(new_meta)} characters")
+        if improvements.get("meta_description"):
+            st.write("**2. Optimized Meta Description:**")
+            st.code(improvements["meta_description"], language="html")
+            st.caption(f"Length: {len(improvements['meta_description'])} characters")
         
-        st.write("**Rewritten Intro Paragraph:**")
-        rewritten_intro = analysis.get("rewritten_intro", "Not provided")
-        st.code(rewritten_intro, language=None)
+        if improvements.get("h1_tag"):
+            st.write("**3. Optimized H1 Tag:**")
+            st.code(improvements["h1_tag"], language="html")
         
-        if analysis.get("suggested_h1"):
-            st.write("**Suggested H1:**")
-            st.code(analysis.get("suggested_h1"), language=None)
+        if improvements.get("intro_paragraph"):
+            st.write("**4. Rewritten Intro Paragraph:**")
+            st.code(improvements["intro_paragraph"], language=None)
+        
+        if improvements.get("header_suggestions"):
+            st.write("**5. Suggested Header Structure:**")
+            for header in improvements["header_suggestions"]:
+                st.code(header, language="html")
+        
+        if improvements.get("content_additions"):
+            st.write("**6. Suggested Content Additions:**")
+            for content in improvements["content_additions"]:
+                st.code(content, language="html")
+        
+        if improvements.get("image_alt_text"):
+            st.write("**7. Optimized Image Alt Text Examples:**")
+            for alt_text in improvements["image_alt_text"]:
+                st.code(alt_text, language="html")
+        
+        if improvements.get("schema_markup"):
+            st.write("**8. Schema Markup (JSON-LD):**")
+            st.code(improvements["schema_markup"], language="json")
+        
+        if improvements.get("internal_linking"):
+            st.write("**9. Internal Linking Improvements:**")
+            st.code(improvements["internal_linking"], language="html")
+        
+        if improvements.get("faq_section"):
+            st.write("**10. FAQ Section:**")
+            for faq in improvements["faq_section"]:
+                st.code(faq, language="html")
+        
+        # Priority Implementation Order
+        if analysis.get("priority_order"):
+            st.subheader("🎯 Priority Implementation Order")
+            for i, priority in enumerate(analysis["priority_order"], 1):
+                st.markdown(f"{i}. {priority}")
         
         # Mobile speed reminder
-        if analysis.get("mobile_speed_reminder"):
-            st.info(f"💡 **Reminder:** {analysis.get('mobile_speed_reminder')}")
-        else:
-            st.info("💡 **Reminder:** Check mobile page speed via [PageSpeed Insights](https://pagespeed.web.dev/)")
+        st.info("💡 **Reminder:** Check mobile page speed via [PageSpeed Insights](https://pagespeed.web.dev/)")
         
         # Source links
         if keyword_result.get("source_links"):
