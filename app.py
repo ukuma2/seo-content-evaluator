@@ -21,6 +21,10 @@ from typing import Dict, List, Optional, Any
 from urllib.parse import urlparse
 from html import unescape
 
+# HTTP + HTML parsing (needed for reliable title/meta/H1 extraction)
+import requests
+from bs4 import BeautifulSoup
+
 # LangChain imports
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.tools import DuckDuckGoSearchRun
@@ -109,6 +113,49 @@ def extract_html_metadata(html_content: str) -> Dict[str, Optional[str]]:
     return metadata
 
 
+def fetch_raw_html(url: str, headers: Dict[str, str], timeout: int = 20) -> str:
+    """
+    Fetch raw HTML for reliable metadata extraction.
+
+    Why:
+    - `WebBaseLoader` often returns cleaned text without HTML tags.
+    - SEO metadata (Title/Meta/H1) must come from raw HTML when possible.
+    """
+    resp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+    resp.raise_for_status()
+    if not resp.encoding:
+        resp.encoding = resp.apparent_encoding
+    return resp.text or ""
+
+
+def parse_metadata_from_html(html: str) -> Dict[str, Optional[str]]:
+    """
+    Parse Title, Meta Description, and first H1 from raw HTML using BeautifulSoup.
+    """
+    out: Dict[str, Optional[str]] = {"title": None, "meta_description": None, "h1": None}
+    if not html:
+        return out
+
+    soup = BeautifulSoup(html, "lxml")
+
+    # Title
+    if soup.title and soup.title.string:
+        out["title"] = soup.title.string.strip()
+
+    # Meta description (name=\"description\")
+    meta = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
+    if meta and meta.get("content"):
+        out["meta_description"] = str(meta.get("content")).strip()
+
+    # H1 (best effort: first H1 on page)
+    h1 = soup.find("h1")
+    if h1:
+        h1_text = h1.get_text(" ", strip=True)
+        out["h1"] = h1_text if h1_text else None
+
+    return out
+
+
 def chunk_text(text: str, max_chars: int = 10000) -> str:
     """
     Truncate text to avoid excessive token usage.
@@ -155,8 +202,17 @@ def crawl_url(url: str) -> Dict[str, Any]:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
+
+        # 1) Fetch raw HTML for accurate SEO metadata extraction
+        raw_html = ""
+        try:
+            raw_html = fetch_raw_html(url, headers=headers, timeout=20)
+            result.update(parse_metadata_from_html(raw_html))
+        except Exception:
+            # If blocked/WAF/etc., continue with text extraction anyway.
+            raw_html = ""
         
-        # Load page content
+        # 2) Load page content using WebBaseLoader (required by spec)
         loader = WebBaseLoader(
             web_paths=[url],
             header_template=headers
@@ -169,14 +225,13 @@ def crawl_url(url: str) -> Dict[str, Any]:
         
         # Extract main text content
         result["text"] = documents[0].page_content.strip()
-        
-        # Try to extract HTML metadata if available
-        if hasattr(documents[0], 'metadata') and 'source' in documents[0].metadata:
-            # WebBaseLoader may store raw HTML in metadata or we can access it differently
-            # For now, we'll parse from page_content if HTML tags are present
-            if "<" in result["text"] and ">" in result["text"]:
-                metadata = extract_html_metadata(result["text"])
-                result.update(metadata)
+
+        # 3) If WebBaseLoader gave us empty text, fall back to HTML -> text
+        if not result["text"] and raw_html:
+            soup = BeautifulSoup(raw_html, "lxml")
+            for tag in soup(["script", "style", "noscript"]):
+                tag.decompose()
+            result["text"] = soup.get_text(" ", strip=True)
         
         # If no text extracted, set error
         if not result["text"]:
