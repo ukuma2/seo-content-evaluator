@@ -447,7 +447,8 @@ def analyze_seo(
     h1: Optional[str],
     keywords: List[str],
     source_links: List[str],
-    llm: ChatGoogleGenerativeAI
+    llm: ChatGoogleGenerativeAI,
+    url: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Run SEO analysis using Gemini via LangChain chain.
@@ -460,6 +461,7 @@ def analyze_seo(
         keywords: List of keyword candidates
         source_links: List of source URLs
         llm: Initialized Gemini LLM instance
+        url: URL being analyzed (optional)
         
     Returns:
         Dictionary with SEO analysis results
